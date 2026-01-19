@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CC Scheduler - Customer Care Shift Management</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useMemo } = React;
+
+    // Icons as simple SVG components
+    const Calendar = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line>
+        <line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+      </svg>
+    );
+    const Download = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
+    );
+    const Plus = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+    );
+    const X = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    );
+    const Users = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+      </svg>
+    );
+    const Clock = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <circle cx="12" cy="12" r="10"></circle>
+        <polyline points="12 6 12 12 16 14"></polyline>
+      </svg>
+    );
+    const Stethoscope = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"></path>
+        <path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"></path>
+        <circle cx="20" cy="10" r="2"></circle>
+      </svg>
+    );
+    const Flag = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
+        <line x1="4" y1="22" x2="4" y2="15"></line>
+      </svg>
+    );
+    const Video = ({ className }) => (
+      <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        <polygon points="23 7 16 12 23 17 23 7"></polygon>
+        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+      </svg>
+    );
+
+    // Team configuration
+    const TEAM = {
+      'Peťa': { ptHours: 0, isManager: true, color: 'bg-gray-100' },
+      'Kristy': { ptHours: 2, isManager: false, color: 'bg-blue-50' },
+      'Soňa': { ptHours: 1, isManager: false, color: 'bg-green-50', defaults: { 3: 'M', 4: 'A' } },
+      'Anička': { ptHours: 1, isManager: false, color: 'bg-yellow-50' },
+      'Monika': { ptHours: 2, isManager: false, color: 'bg-purple-50' },
+    };
+    const TEAM_ORDER = ['Peťa', 'Kristy', 'Soňa', 'Anička', 'Monika'];
+    const AGENTS = TEAM_ORDER.filter(name => !TEAM[name].isManager);
+
+    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const TIME_SLOTS = [];
+    for (let h = 8; h < 19; h++) {
+      TIME_SLOTS.push(`${h.toString().padStart(2, '0')}:00`);
+      if (h < 18) TIME_SLOTS.push(`${h.toString().padStart(2, '0')}:30`);
+    }
+    const HOLIDAY_TIME_SLOTS = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00'];
+
+    // Helper functions
+    const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+    const isWeekend = (year, month, day) => {
+      const d = new Date(year, month, day);
+      return d.getDay() === 0 || d.getDay() === 6;
+    };
+    const formatDate = (year, month, day) => `${year}-${(month + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+
+    // Calculate Easter Sunday
+    const calculateEaster = (year) => {
+      const a = year % 19;
+      const b = Math.floor(year / 100);
+      const c = year % 100;
+      const d = Math.floor(b / 4);
+      const e = b % 4;
+      const f = Math.floor((b + 8) / 25);
+      const g = Math.floor((b - f + 1) / 3);
+      const h = (19 * a + b - d - g + 15) % 30;
+      const i = Math.floor(c / 4);
+      const k = c % 4;
+      const l = (32 + 2 * e + 2 * i - h - k) % 7;
+      const m = Math.floor((a + 11 * h + 22 * l) / 451);
+      const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+      const day = ((h + l - 7 * m + 114) % 31) + 1;
+      return new Date(year, month, day);
+    };
+
+    // Get Czech holidays for a year
+    const getCzechHolidays = (year) => {
+      const holidays = {};
+      
+      const formatDateKey = (d) => {
+        const y = d.getFullYear();
+        const m = (d.getMonth() + 1).toString().padStart(2, '0');
+        const day = d.getDate().toString().padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      };
+      
+      const closedDays = [
+        { date: new Date(year, 0, 1), name: "New Year's Day" },
+        { date: new Date(year, 11, 24), name: "Christmas Eve" },
+        { date: new Date(year, 11, 25), name: "Christmas Day" },
+      ];
+      closedDays.forEach(({ date, name }) => {
+        holidays[formatDateKey(date)] = { type: 'closed', name };
+      });
+      
+      const easter = calculateEaster(year);
+      const goodFriday = new Date(easter);
+      goodFriday.setDate(easter.getDate() - 2);
+      const easterMonday = new Date(easter);
+      easterMonday.setDate(easter.getDate() + 1);
+      
+      const reducedDays = [
+        { date: goodFriday, name: "Good Friday" },
+        { date: easterMonday, name: "Easter Monday" },
+        { date: new Date(year, 4, 1), name: "Labour Day" },
+        { date: new Date(year, 4, 8), name: "Victory Day" },
+        { date: new Date(year, 6, 6), name: "Jan Hus Day" },
+        { date: new Date(year, 8, 28), name: "Statehood Day" },
+        { date: new Date(year, 9, 28), name: "Independence Day" },
+        { date: new Date(year, 10, 17), name: "Freedom Day" },
+      ];
+      reducedDays.forEach(({ date, name }) => {
+        holidays[formatDateKey(date)] = { type: 'reduced', name };
+      });
+      
+      return holidays;
+    };
+
+    // Schedule generation logic
+    const generateSchedule = (year, month, vacations, halfDays, doctorAppts, sickDays = {}, shiftOverrides = {}) => {
+      const daysInMonth = getDaysInMonth(year, month);
+      const holidays = getCzechHolidays(year);
+      const shifts = {};
+      const phoneDuty = {};
+      const ptSchedule = {};
+      
+      TEAM_ORDER.forEach(name => { shifts[name] = {}; });
+      
+      // Track A shifts per agent for fair rotation
+      const aShiftCounts = {};
+      const aShiftsByDay = {};  // Track A shifts by day of week for fair distribution
+      AGENTS.forEach(name => { aShiftCounts[name] = 0; });
+      
+      const dutyCount = {};
+      AGENTS.forEach(name => { dutyCount[name] = 0; });
+      
+      const holidayDutyCount = {};
+      AGENTS.forEach(name => { holidayDutyCount[name] = 0; });
+      
+      // Day name mapping for defaults
+      const DAY_NAMES_FULL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = formatDate(year, month, day);
+        const dayOfWeek = new Date(year, month, day).getDay();
+        const dayName = DAY_NAMES_FULL[dayOfWeek];
+        const holiday = holidays[dateStr];
+        const isClosed = holiday?.type === 'closed';
+        const isHoliday = holiday?.type === 'reduced';
+        
+        if (isWeekend(year, month, day) || isClosed) continue;
+        
+        // Combine vacations and sick days for availability
+        const unavailable = name => vacations[name]?.includes(dateStr) || sickDays[name]?.includes(dateStr);
+        let available = AGENTS.filter(name => !unavailable(name));
+        
+        // Mark vacations and sick days
+        AGENTS.forEach(name => {
+          if (vacations[name]?.includes(dateStr)) {
+            shifts[name][dateStr] = 'V';
+          } else if (sickDays[name]?.includes(dateStr)) {
+            shifts[name][dateStr] = 'S';  // S for Sick
+          }
+        });
+        
+        if (isHoliday) {
+          // Bank holiday: only 1 person needed
+          if (available.length > 0) {
+            const sorted = [...available].sort((a, b) => holidayDutyCount[a] - holidayDutyCount[b]);
+            const assigned = sorted[0];
+            shifts[assigned][dateStr] = 'M4';
+            holidayDutyCount[assigned]++;
+            phoneDuty[dateStr] = { M: assigned };
+            dutyCount[assigned]++;
+            
+            available.filter(n => n !== assigned).forEach(name => {
+              if (!shifts[name][dateStr]) shifts[name][dateStr] = '';
+            });
+          }
+          const petaUnavail = vacations['Peťa']?.includes(dateStr) || sickDays['Peťa']?.includes(dateStr);
+          shifts['Peťa'][dateStr] = vacations['Peťa']?.includes(dateStr) ? 'V' : sickDays['Peťa']?.includes(dateStr) ? 'S' : '';
+        } else {
+          // Normal day: exactly 1 agent gets A shift, rest get M shift
+          
+          // Mark half days first
+          const halfDayAgents = [];
+          AGENTS.forEach(name => {
+            const hd = halfDays[name]?.find(h => h.date === dateStr);
+            if (hd) {
+              shifts[name][dateStr] = hd.type === 'morning' ? 'M4' : 'A4';
+              halfDayAgents.push(name);
+            }
+          });
+          
+          // Available for full shift (not on vacation, not sick, not on half day)
+          const fullDayAvailable = available.filter(name => !halfDayAgents.includes(name));
+          
+          // Determine who gets A shift today
+          let aShiftAgent = null;
+          
+          // Check if someone has a fixed default for today (using dayName)
+          for (const name of fullDayAvailable) {
+            if (TEAM[name].defaults) {
+              // Check by day name (Wednesday=3, Thursday=4)
+              if ((dayName === 'Wednesday' && TEAM[name].defaults[3] === 'M') ||
+                  (dayName === 'Thursday' && TEAM[name].defaults[4] === 'A')) {
+                if (TEAM[name].defaults[dayOfWeek] === 'A') {
+                  aShiftAgent = name;
+                  break;
+                }
+              }
+            }
+          }
+          
+          // If no fixed default for A shift, pick agent considering:
+          // 1. Fewest A shifts overall (primary)
+          // 2. Fewest A shifts on THIS day of week (secondary - prevents day clustering)
+          if (aShiftAgent === null && fullDayAvailable.length > 0) {
+            const sortedByA = [...fullDayAvailable].sort((a, b) => {
+              const totalDiff = aShiftCounts[a] - aShiftCounts[b];
+              if (totalDiff !== 0) return totalDiff;
+              // Tie-breaker: prefer agent with fewer A shifts on this day of week
+              return (aShiftsByDay[a]?.[dayOfWeek] || 0) - (aShiftsByDay[b]?.[dayOfWeek] || 0);
+            });
+            aShiftAgent = sortedByA[0];
+          }
+          
+          // Assign shifts: exactly 1 gets A, rest get M
+          fullDayAvailable.forEach(name => {
+            if (name === aShiftAgent) {
+              shifts[name][dateStr] = 'A';
+              aShiftCounts[name]++;
+              // Track A shifts by day of week
+              if (!aShiftsByDay[name]) aShiftsByDay[name] = {};
+              aShiftsByDay[name][dayOfWeek] = (aShiftsByDay[name][dayOfWeek] || 0) + 1;
+            } else {
+              shifts[name][dateStr] = 'M';
+            }
+          });
+          
+          // Manager always M (unless vacation/half day)
+          const petaHD = halfDays['Peťa']?.find(h => h.date === dateStr);
+          if (vacations['Peťa']?.includes(dateStr)) {
+            shifts['Peťa'][dateStr] = 'V';
+          } else if (petaHD) {
+            shifts['Peťa'][dateStr] = petaHD.type === 'morning' ? 'M4' : 'A4';
+          } else {
+            shifts['Peťa'][dateStr] = 'M';
+          }
+          
+          // Phone duty assignment
+          const availableMorning = AGENTS.filter(name => {
+            if (vacations[name]?.includes(dateStr)) return false;
+            const hd = halfDays[name]?.find(h => h.date === dateStr);
+            if (hd && hd.type === 'afternoon') return false;
+            const doc = doctorAppts.find(d => d.person === name && d.date === dateStr);
+            if (doc) {
+              const docHour = parseInt(doc.time.split(':')[0]);
+              if (docHour >= 10 && docHour < 13) return false;
+            }
+            return true;
+          });
+          
+          const availableAfternoon = AGENTS.filter(name => {
+            if (vacations[name]?.includes(dateStr)) return false;
+            const hd = halfDays[name]?.find(h => h.date === dateStr);
+            if (hd && hd.type === 'morning') return false;
+            const doc = doctorAppts.find(d => d.person === name && d.date === dateStr);
+            if (doc) {
+              const docHour = parseInt(doc.time.split(':')[0]);
+              if (docHour >= 13 && docHour < 16) return false;
+            }
+            return true;
+          });
+          
+          phoneDuty[dateStr] = { M: null, A: null };
+          
+          if (availableMorning.length >= 1) {
+            const sorted = [...availableMorning].sort((a, b) => dutyCount[a] - dutyCount[b]);
+            phoneDuty[dateStr].M = sorted[0];
+            dutyCount[sorted[0]]++;
+          }
+          
+          if (availableAfternoon.length >= 1) {
+            const sorted = [...availableAfternoon].sort((a, b) => dutyCount[a] - dutyCount[b]);
+            const pick = sorted.find(n => n !== phoneDuty[dateStr]?.M) || sorted[0];
+            phoneDuty[dateStr].A = pick;
+            dutyCount[pick]++;
+          }
+          
+          // Project times - spread across morning AND afternoon windows
+          const fullyAvailable = AGENTS.filter(name => 
+            !vacations[name]?.includes(dateStr) && 
+            !halfDays[name]?.find(h => h.date === dateStr)
+          );
+          
+          if (fullyAvailable.length > 2) {
+            const dayPT = {};
+            
+            const ptAlloc = {};
+            fullyAvailable.forEach(name => {
+              let hours = TEAM[name].ptHours;
+              if (fullyAvailable.length === 3) hours = Math.min(hours, 1);
+              ptAlloc[name] = hours;
+            });
+            
+            // PT windows - PT must end by 15:30 (index 15)
+            const morningWindow = [6, 7, 8, 9, 10];  // 11:00-13:00
+            const afternoonWindow = [11, 12, 13];    // 13:30-14:30 (allows 2h PT to end by 15:30)
+            const PT_END_LIMIT = 15;  // PT must end by 15:30 (index 15 = 15:30)
+            
+            const ptOccupation = {};
+            
+            const sortedAgents = [...fullyAvailable]
+              .filter(n => ptAlloc[n] > 0)
+              .sort((a, b) => ptAlloc[b] - ptAlloc[a]);
+            
+            let useMorningFirst = true;
+            
+            sortedAgents.forEach(name => {
+              const hours = ptAlloc[name];
+              const numSlots = Math.floor(hours * 2);
+              
+              const windowsToTry = useMorningFirst 
+                ? [morningWindow, afternoonWindow] 
+                : [afternoonWindow, morningWindow];
+              
+              let bestStart = null;
+              let bestScore = -999;
+              
+              for (const candidateSlots of windowsToTry) {
+                for (const startIdx of candidateSlots) {
+                  const endIdx = startIdx + numSlots;
+                  // Ensure PT ends by 15:30
+                  if (endIdx > PT_END_LIMIT) continue;
+                  if (endIdx > candidateSlots[candidateSlots.length - 1] + 1) continue;
+                  
+                  let valid = true;
+                  for (let slot = startIdx; slot < endIdx; slot++) {
+                    if ((ptOccupation[slot] || 0) >= 2) {
+                      valid = false;
+                      break;
+                    }
+                  }
+                  if (!valid) continue;
+                  
+                  let score = 0;
+                  for (let slot = startIdx; slot < endIdx; slot++) {
+                    score += (ptOccupation[slot] || 0) === 0 ? 2 : 1;
+                  }
+                  if (candidateSlots === windowsToTry[0]) score += 1;
+                  
+                  if (score > bestScore) {
+                    bestScore = score;
+                    bestStart = startIdx;
+                  }
+                }
+                if (bestStart !== null && bestScore > 0) break;
+              }
+              
+              if (bestStart !== null) {
+                dayPT[name] = { start: TIME_SLOTS[bestStart], hours };
+                for (let slot = bestStart; slot < bestStart + numSlots; slot++) {
+                  ptOccupation[slot] = (ptOccupation[slot] || 0) + 1;
+                }
+              }
+              
+              useMorningFirst = !useMorningFirst;
+            });
+            
+            ptSchedule[dateStr] = dayPT;
+          }
+        }
+      }
+      
+      // Apply manual shift overrides (last-minute changes)
+      Object.entries(shiftOverrides).forEach(([dateStr, overrides]) => {
+        Object.entries(overrides).forEach(([name, newShift]) => {
+          if (shifts[name] && newShift) {
+            shifts[name][dateStr] = newShift;
+          }
+        });
+      });
+      
+      return { shifts, phoneDuty, ptSchedule };
+    };
+
+    // Excel export
+    const exportToExcel = (year, month, schedule, vacations, halfDays, doctorAppts) => {
+      const wb = XLSX.utils.book_new();
+      const daysInMonth = getDaysInMonth(year, month);
+      const holidays = getCzechHolidays(year);
+      const { shifts, phoneDuty, ptSchedule } = schedule;
+      
+      const monthlyData = [];
+      monthlyData.push(['', `${MONTHS[month]} ${year}`]);
+      monthlyData.push(['', ...Array.from({ length: daysInMonth }, (_, i) => i + 1)]);
+      
+      const dayNamesRow = [''];
+      for (let d = 1; d <= daysInMonth; d++) {
+        dayNamesRow.push(DAY_NAMES[new Date(year, month, d).getDay()]);
+      }
+      monthlyData.push(dayNamesRow);
+      
+      TEAM_ORDER.forEach(name => {
+        const row = [name];
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dateStr = formatDate(year, month, d);
+          row.push(shifts[name]?.[dateStr] || '');
+        }
+        monthlyData.push(row);
+      });
+      
+      const monthlyWs = XLSX.utils.aoa_to_sheet(monthlyData);
+      XLSX.utils.book_append_sheet(wb, monthlyWs, 'Monthly overview');
+      
+      let weekStart = 1;
+      while (weekStart <= daysInMonth) {
+        let weekEnd = weekStart;
+        while (weekEnd < daysInMonth && new Date(year, month, weekEnd).getDay() !== 0) {
+          weekEnd++;
+        }
+        if (weekEnd > daysInMonth) weekEnd = daysInMonth;
+        
+        const weekData = [];
+        const sheetName = `${weekStart}.${month + 1}. - ${weekEnd}.${month + 1}.`;
+        weekData.push(['', '', sheetName]);
+        weekData.push([]);
+        
+        for (let d = weekStart; d <= weekEnd; d++) {
+          const dateStr = formatDate(year, month, d);
+          const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(year, month, d).getDay()];
+          const holiday = holidays[dateStr];
+          const isClosed = holiday?.type === 'closed';
+          const isHoliday = holiday?.type === 'reduced';
+          
+          if (isClosed) {
+            weekData.push([`${dayName} ${d}.${month + 1}.`, '', `CLOSED - ${holiday.name}`]);
+            weekData.push([]);
+            continue;
+          }
+          
+          if (isWeekend(year, month, d)) {
+            weekData.push([`${dayName} ${d}.${month + 1}.`]);
+            weekData.push([]);
+            continue;
+          }
+          
+          const timeSlots = isHoliday ? HOLIDAY_TIME_SLOTS : TIME_SLOTS;
+          weekData.push([`${dayName} ${d}.${month + 1}.`, '', ...timeSlots, isHoliday ? `🎄 ${holiday.name}` : '']);
+          
+          TEAM_ORDER.forEach(name => {
+            const displayName = name === 'Monika' ? 'Monča' : name;
+            const row = [displayName, ''];
+            
+            if (vacations[name]?.includes(dateStr)) {
+              row.push('Vacation');
+              for (let i = 1; i < timeSlots.length; i++) row.push('');
+            } else if (isHoliday) {
+              if (shifts[name]?.[dateStr] === 'M4') {
+                row[1] = '📞M';
+              }
+              for (let i = 0; i < timeSlots.length; i++) row.push('');
+            } else {
+              const hd = halfDays[name]?.find(h => h.date === dateStr);
+              
+              if (!hd) {
+                if (phoneDuty[dateStr]?.M === name) row[1] = '📞M';
+                else if (phoneDuty[dateStr]?.A === name) row[1] = '📞A';
+              }
+              
+              for (let i = 0; i < timeSlots.length; i++) {
+                let cellValue = '';
+                
+                if (hd) {
+                  if (hd.type === 'morning' && timeSlots[i] === '12:00') {
+                    cellValue = 'Half day off';
+                  } else if (hd.type === 'afternoon' && i === 0) {
+                    cellValue = 'Half day off';
+                  }
+                }
+                
+                if (!hd) {
+                  const pt = ptSchedule[dateStr]?.[name];
+                  if (pt) {
+                    const startIdx = timeSlots.indexOf(pt.start);
+                    const numCells = Math.floor(pt.hours * 2);
+                    if (i === startIdx) {
+                      cellValue = `PT ${pt.hours}h`;
+                    } else if (i > startIdx && i < startIdx + numCells) {
+                      cellValue = 'PT';
+                    }
+                  }
+                }
+                
+                const doc = doctorAppts.find(a => a.person === name && a.date === dateStr);
+                if (doc && timeSlots[i] === doc.time) {
+                  cellValue = 'Doctor';
+                }
+                
+                row.push(cellValue);
+              }
+            }
+            weekData.push(row);
+          });
+          weekData.push([]);
+        }
+        
+        const weekWs = XLSX.utils.aoa_to_sheet(weekData);
+        XLSX.utils.book_append_sheet(wb, weekWs, sheetName.substring(0, 31));
+        
+        weekStart = weekEnd + 1;
+      }
+      
+      XLSX.writeFile(wb, `CC_Schedule_${MONTHS[month]}_${year}.xlsx`);
+    };
+
+    // Main App Component
+    function CCSchedulerApp() {
+      // Get current date in Czech timezone (CET/CEST)
+      const getCzechDate = () => {
+        const now = new Date();
+        const czechTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Prague' }));
+        return czechTime;
+      };
+      
+      const currentDate = getCzechDate();
+      const [year, setYear] = useState(currentDate.getFullYear());
+      const [month, setMonth] = useState(currentDate.getMonth());
+      const [vacations, setVacations] = useState({});
+      const [sickDays, setSickDays] = useState({});  // Sick leave tracking
+      const [halfDays, setHalfDays] = useState({});
+      const [doctorAppts, setDoctorAppts] = useState([]);
+      const [demoCalls, setDemoCalls] = useState([]);
+      const [shiftOverrides, setShiftOverrides] = useState({});  // Manual shift adjustments
+      const [activeTab, setActiveTab] = useState('weekly');
+      const [selectedWeek, setSelectedWeek] = useState(() => {
+        // Initialize to current week
+        const today = getCzechDate();
+        const currentDay = today.getDate();
+        const daysInM = getDaysInMonth(today.getFullYear(), today.getMonth());
+        let weekIdx = 0;
+        let start = 1;
+        while (start <= daysInM) {
+          let end = start;
+          while (end < daysInM && new Date(today.getFullYear(), today.getMonth(), end).getDay() !== 0) end++;
+          if (end > daysInM) end = daysInM;
+          if (currentDay >= start && currentDay <= end) {
+            return weekIdx;
+          }
+          start = end + 1;
+          weekIdx++;
+        }
+        return 0;
+      });
+      
+      const [newTimeOff, setNewTimeOff] = useState({ person: 'Kristy', startDate: '', endDate: '', type: 'full' });
+      const [newDoctor, setNewDoctor] = useState({ person: 'Kristy', date: '', time: '09:00' });
+      const [newDemo, setNewDemo] = useState({ person: 'Soňa', date: '', time: '10:00', duration: 30 });
+      const [newOverride, setNewOverride] = useState({ person: '', date: '', shift: 'M' });
+      
+      const holidays = useMemo(() => getCzechHolidays(year), [year]);
+      const schedule = useMemo(() => generateSchedule(year, month, vacations, halfDays, doctorAppts, sickDays, shiftOverrides), [year, month, vacations, halfDays, doctorAppts, sickDays, shiftOverrides]);
+      
+      const daysInMonth = getDaysInMonth(year, month);
+      
+      const weeks = useMemo(() => {
+        const result = [];
+        let start = 1;
+        while (start <= daysInMonth) {
+          let end = start;
+          while (end < daysInMonth && new Date(year, month, end).getDay() !== 0) end++;
+          if (end > daysInMonth) end = daysInMonth;
+          result.push({ start, end });
+          start = end + 1;
+        }
+        return result;
+      }, [year, month, daysInMonth]);
+      
+      // Compute which week contains today (Czech time)
+      const currentWeekIndex = useMemo(() => {
+        const czechNow = getCzechDate();
+        if (year === czechNow.getFullYear() && month === czechNow.getMonth()) {
+          const today = czechNow.getDate();
+          return weeks.findIndex(w => today >= w.start && today <= w.end);
+        }
+        return -1; // Not current month
+      }, [year, month, weeks]);
+      
+      // Auto-select current week when viewing current month
+      React.useEffect(() => {
+        const czechNow = getCzechDate();
+        if (year === czechNow.getFullYear() && month === czechNow.getMonth()) {
+          const today = czechNow.getDate();
+          const weekIdx = weeks.findIndex(w => today >= w.start && today <= w.end);
+          if (weekIdx >= 0) {
+            setSelectedWeek(weekIdx);
+          }
+        } else {
+          setSelectedWeek(0);
+        }
+      }, [year, month, weeks]);
+      
+      const monthHolidays = useMemo(() => {
+        const result = [];
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dateStr = formatDate(year, month, d);
+          if (holidays[dateStr]) {
+            result.push({ day: d, ...holidays[dateStr] });
+          }
+        }
+        return result;
+      }, [year, month, daysInMonth, holidays]);
+      
+      const addTimeOff = () => {
+        if (!newTimeOff.startDate) return;
+        const start = new Date(newTimeOff.startDate + 'T12:00:00');
+        const end = newTimeOff.endDate ? new Date(newTimeOff.endDate + 'T12:00:00') : new Date(start);
+        
+        if (newTimeOff.type === 'full') {
+          // Full day vacation
+          const dates = [];
+          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const y = d.getFullYear();
+            const m = (d.getMonth() + 1).toString().padStart(2, '0');
+            const day = d.getDate().toString().padStart(2, '0');
+            dates.push(`${y}-${m}-${day}`);
+          }
+          setVacations(prev => ({
+            ...prev,
+            [newTimeOff.person]: [...(prev[newTimeOff.person] || []), ...dates]
+          }));
+        } else if (newTimeOff.type === 'sick') {
+          // Sick day(s)
+          const dates = [];
+          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const y = d.getFullYear();
+            const m = (d.getMonth() + 1).toString().padStart(2, '0');
+            const day = d.getDate().toString().padStart(2, '0');
+            dates.push(`${y}-${m}-${day}`);
+          }
+          setSickDays(prev => ({
+            ...prev,
+            [newTimeOff.person]: [...(prev[newTimeOff.person] || []), ...dates]
+          }));
+        } else {
+          // Half day (morning or afternoon) - only single date
+          const dateStr = newTimeOff.startDate;
+          setHalfDays(prev => ({
+            ...prev,
+            [newTimeOff.person]: [...(prev[newTimeOff.person] || []), { date: dateStr, type: newTimeOff.type }]
+          }));
+        }
+        setNewTimeOff({ person: 'Kristy', startDate: '', endDate: '', type: 'full' });
+      };
+      
+      const removeVacation = (person, date) => {
+        setVacations(prev => ({
+          ...prev,
+          [person]: prev[person].filter(d => d !== date)
+        }));
+      };
+      
+      const removeSickDay = (person, date) => {
+        setSickDays(prev => ({
+          ...prev,
+          [person]: prev[person].filter(d => d !== date)
+        }));
+      };
+      
+      const removeHalfDay = (person, date) => {
+        setHalfDays(prev => ({
+          ...prev,
+          [person]: prev[person].filter(h => h.date !== date)
+        }));
+      };
+      
+      // Shift override handlers
+      const addShiftOverride = (date, person, newShift) => {
+        setShiftOverrides(prev => ({
+          ...prev,
+          [date]: { ...(prev[date] || {}), [person]: newShift }
+        }));
+      };
+      
+      const removeShiftOverride = (date, person) => {
+        setShiftOverrides(prev => {
+          const updated = { ...prev };
+          if (updated[date]) {
+            delete updated[date][person];
+            if (Object.keys(updated[date]).length === 0) delete updated[date];
+          }
+          return updated;
+        });
+      };
+      
+      const addDoctor = () => {
+        if (!newDoctor.date) return;
+        setDoctorAppts(prev => [...prev, { ...newDoctor }]);
+        setNewDoctor({ person: 'Kristy', date: '', time: '09:00' });
+      };
+      
+      const removeDoctor = (index) => {
+        setDoctorAppts(prev => prev.filter((_, i) => i !== index));
+      };
+      
+      const addDemo = () => {
+        if (!newDemo.date) return;
+        setDemoCalls(prev => [...prev, { ...newDemo }]);
+        setNewDemo({ person: 'Soňa', date: '', time: '10:00', duration: 30 });
+      };
+      
+      const removeDemo = (index) => {
+        setDemoCalls(prev => prev.filter((_, i) => i !== index));
+      };
+      
+      const getShiftColor = (shift) => {
+        switch (shift) {
+          case 'M': return 'bg-blue-100 text-blue-800';
+          case 'A': return 'bg-orange-100 text-orange-800';
+          case 'V': return 'bg-yellow-200 text-yellow-800';
+          case 'S': return 'bg-orange-200 text-orange-800';
+          case 'M4': return 'bg-emerald-100 text-emerald-800';
+          case 'A4': return 'bg-amber-100 text-amber-800';
+          default: return 'bg-gray-50';
+        }
+      };
+
+      return (
+        <div className="min-h-screen bg-gray-50 p-4">
+          <div className="max-w-7xl mx-auto">
+            {/* Header */}
+            <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+              <div className="flex items-center justify-between flex-wrap gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="bg-indigo-100 p-3 rounded-lg">
+                    <Calendar className="w-6 h-6 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-bold text-gray-900">CC Scheduler</h1>
+                    <p className="text-gray-500 text-sm">Customer Care Shift Management</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <select
+                    value={month}
+                    onChange={(e) => setMonth(parseInt(e.target.value))}
+                    className="px-4 py-2 border rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {MONTHS.map((m, i) => (
+                      <option key={i} value={i}>{m}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={year}
+                    onChange={(e) => setYear(parseInt(e.target.value))}
+                    className="px-4 py-2 border rounded-lg bg-white focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {[2025, 2026, 2027, 2028].map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => exportToExcel(year, month, schedule, vacations, halfDays, doctorAppts)}
+                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                  >
+                    <Download className="w-4 h-4" />
+                    Export Excel
+                  </button>
+                </div>
+              </div>
+              
+              {monthHolidays.length > 0 && (
+                <div className="mt-4 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                  <div className="flex items-center gap-2 text-emerald-800">
+                    <Flag className="w-4 h-4" />
+                    <span className="font-medium text-sm">Czech Holidays this month:</span>
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-2">
+                    {monthHolidays.map((h, i) => (
+                      <span key={i} className={`text-xs px-2 py-1 rounded ${h.type === 'closed' ? 'bg-red-100 text-red-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                        {h.day}.{month + 1}. - {h.name} {h.type === 'closed' ? '(Closed)' : '(8-12)'}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+              {/* Main Content */}
+              <div className="lg:col-span-3">
+                <div className="bg-white rounded-xl shadow-sm mb-4">
+                  <div className="flex border-b">
+                    <button
+                      onClick={() => setActiveTab('weekly')}
+                      className={`flex-1 px-4 py-3 text-sm font-medium ${activeTab === 'weekly' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500'}`}
+                    >
+                      Weekly Detail
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('monthly')}
+                      className={`flex-1 px-4 py-3 text-sm font-medium ${activeTab === 'monthly' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500'}`}
+                    >
+                      Monthly Overview
+                    </button>
+                  </div>
+                </div>
+                
+                {activeTab === 'monthly' ? (
+                  <div className="bg-white rounded-xl shadow-sm p-4 overflow-x-auto">
+                    <h2 className="text-lg font-semibold mb-4">{MONTHS[month]} {year}</h2>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr>
+                          <th className="px-2 py-1 text-left w-20"></th>
+                          {Array.from({ length: daysInMonth }, (_, i) => {
+                            const dateStr = formatDate(year, month, i + 1);
+                            const holiday = holidays[dateStr];
+                            const czechNow = getCzechDate();
+                            const isToday = year === czechNow.getFullYear() && month === czechNow.getMonth() && (i + 1) === czechNow.getDate();
+                            return (
+                              <th key={i} className={`px-1 py-1 text-center min-w-8 ${
+                                isToday ? 'bg-green-500 text-white rounded' :
+                                isWeekend(year, month, i + 1) ? 'bg-gray-100' : 
+                                holiday?.type === 'closed' ? 'bg-red-600 text-white' :
+                                holiday?.type === 'reduced' ? 'bg-emerald-100' : ''
+                              }`}>
+                                {i + 1}
+                              </th>
+                            );
+                          })}
+                        </tr>
+                        <tr>
+                          <th className="px-2 py-1 text-left text-gray-500 text-xs"></th>
+                          {Array.from({ length: daysInMonth }, (_, i) => {
+                            const dateStr = formatDate(year, month, i + 1);
+                            const holiday = holidays[dateStr];
+                            const czechNow = getCzechDate();
+                            const isToday = year === czechNow.getFullYear() && month === czechNow.getMonth() && (i + 1) === czechNow.getDate();
+                            return (
+                              <th key={i} className={`px-1 py-1 text-center text-xs text-gray-500 ${
+                                isToday ? 'bg-green-100' :
+                                isWeekend(year, month, i + 1) ? 'bg-gray-100' :
+                                holiday?.type === 'closed' ? 'bg-red-600 text-white' :
+                                holiday?.type === 'reduced' ? 'bg-emerald-100' : ''
+                              }`}>
+                                {DAY_NAMES[new Date(year, month, i + 1).getDay()]}
+                              </th>
+                            );
+                          })}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {TEAM_ORDER.map(name => (
+                          <tr key={name} className={TEAM[name].color}>
+                            <td className="px-2 py-1 font-medium">{name === 'Monika' ? 'Monča' : name}</td>
+                            {Array.from({ length: daysInMonth }, (_, i) => {
+                              const dateStr = formatDate(year, month, i + 1);
+                              const shift = schedule.shifts[name]?.[dateStr];
+                              const isWE = isWeekend(year, month, i + 1);
+                              const holiday = holidays[dateStr];
+                              const czechNow = getCzechDate();
+                              const isToday = year === czechNow.getFullYear() && month === czechNow.getMonth() && (i + 1) === czechNow.getDate();
+                              const hasDoctor = doctorAppts.some(d => d.person === name && d.date === dateStr);
+                              return (
+                                <td key={i} className={`px-1 py-1 text-center ${
+                                  isToday ? 'bg-green-100' :
+                                  isWE ? 'bg-gray-100' :
+                                  holiday?.type === 'closed' ? 'bg-red-600' :
+                                  holiday?.type === 'reduced' ? 'bg-emerald-50' : ''
+                                }`}>
+                                  {shift && (
+                                    <span className={`inline-block px-1 rounded text-xs font-medium ${getShiftColor(shift)}`}>
+                                      {shift}
+                                    </span>
+                                  )}
+                                  {hasDoctor && <span className="text-red-500 text-xs ml-0.5">•</span>}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex gap-2 flex-wrap">
+                      {weeks.map((week, i) => {
+                        const isCurrentWeek = i === currentWeekIndex;
+                        const isSelected = selectedWeek === i;
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => setSelectedWeek(i)}
+                            className={`px-3 py-1 rounded-lg text-sm relative ${
+                              isSelected 
+                                ? 'bg-indigo-600 text-white' 
+                                : isCurrentWeek 
+                                  ? 'bg-green-100 border-2 border-green-500 text-green-800 font-semibold' 
+                                  : 'bg-white border hover:bg-gray-50'
+                            }`}
+                          >
+                            {week.start}.{month + 1}. - {week.end}.{month + 1}.
+                            {isCurrentWeek && !isSelected && (
+                              <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="bg-white rounded-xl shadow-sm p-4 overflow-x-auto">
+                      {weeks[selectedWeek] && (
+                        <div className="space-y-6">
+                          {Array.from({ length: weeks[selectedWeek].end - weeks[selectedWeek].start + 1 }, (_, i) => {
+                            const day = weeks[selectedWeek].start + i;
+                            const dateStr = formatDate(year, month, day);
+                            const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(year, month, day).getDay()];
+                            const isWE = isWeekend(year, month, day);
+                            const holiday = holidays[dateStr];
+                            const isClosed = holiday?.type === 'closed';
+                            const isHoliday = holiday?.type === 'reduced';
+                            
+                            // Check if this is today (Czech time)
+                            const czechNow = getCzechDate();
+                            const isToday = year === czechNow.getFullYear() && month === czechNow.getMonth() && day === czechNow.getDate();
+                            
+                            if (isClosed) {
+                              return (
+                                <div key={day} className={`bg-red-50 p-3 rounded-lg border border-red-200 ${isToday ? 'ring-2 ring-green-500' : ''}`}>
+                                  <h3 className="font-semibold text-red-800">
+                                    {dayName} {day}.{month + 1}. — CLOSED
+                                    {isToday && <span className="ml-2 text-xs bg-green-500 text-white px-2 py-0.5 rounded">TODAY</span>}
+                                  </h3>
+                                  <p className="text-red-600 text-sm">{holiday.name}</p>
+                                </div>
+                              );
+                            }
+                            
+                            if (isWE) {
+                              return (
+                                <div key={day} className={`text-gray-400 ${isToday ? 'ring-2 ring-green-500 rounded-lg p-2' : ''}`}>
+                                  <h3 className="font-medium">
+                                    {dayName} {day}.{month + 1}.
+                                    {isToday && <span className="ml-2 text-xs bg-green-500 text-white px-2 py-0.5 rounded">TODAY</span>}
+                                  </h3>
+                                </div>
+                              );
+                            }
+                            
+                            const timeSlots = isHoliday ? HOLIDAY_TIME_SLOTS : TIME_SLOTS.slice(0, 20);
+                            
+                            return (
+                              <div key={day} className={`${isHoliday ? 'bg-emerald-50 p-3 rounded-lg border border-emerald-200' : ''} ${isToday ? 'ring-2 ring-green-500 rounded-lg p-2' : ''}`}>
+                                <h3 className="font-semibold text-gray-900 mb-2">
+                                  {dayName} {day}.{month + 1}.
+                                  {isToday && <span className="ml-2 text-xs bg-green-500 text-white px-2 py-0.5 rounded">TODAY</span>}
+                                  {isHoliday && <span className="ml-2 text-emerald-600 font-normal text-sm">🎄 {holiday.name} (8:00-12:00)</span>}
+                                </h3>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr>
+                                        <th className="px-2 py-1 text-left w-20"></th>
+                                        <th className="px-1 py-1 w-12 text-center text-gray-600">Start</th>
+                                        <th className="px-1 py-1 w-12 text-center text-gray-600">End</th>
+                                        <th className="px-1 py-1 w-8"></th>
+                                        {timeSlots.map(t => (
+                                          <th key={t} className="px-1 py-1 text-center min-w-12">{t}</th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {TEAM_ORDER.map(name => {
+                                        const isOnVacation = vacations[name]?.includes(dateStr);
+                                        const isOnSickLeave = sickDays[name]?.includes(dateStr);
+                                        const isUnavailable = isOnVacation || isOnSickLeave;
+                                        const hd = halfDays[name]?.find(h => h.date === dateStr);
+                                        const phone = schedule.phoneDuty[dateStr];
+                                        const pt = schedule.ptSchedule[dateStr]?.[name];
+                                        const doc = doctorAppts.find(d => d.person === name && d.date === dateStr);
+                                        const demo = demoCalls.find(d => d.person === name && d.date === dateStr);
+                                        const shift = schedule.shifts[name]?.[dateStr];
+                                        const isOffOnHoliday = isHoliday && shift !== 'M4';
+                                        
+                                        // Determine start and end times based on shift
+                                        let startTime = '';
+                                        let endTime = '';
+                                        if (shift === 'M') { startTime = '8:00'; endTime = '16:30'; }
+                                        else if (shift === 'A') { startTime = '9:00'; endTime = '17:30'; }
+                                        else if (shift === 'M4') { startTime = '8:00'; endTime = '12:00'; }
+                                        else if (shift === 'A4') { startTime = '12:30'; endTime = '16:30'; }
+                                        else if (shift === 'V') { startTime = '—'; endTime = '—'; }
+                                        else if (shift === 'S') { startTime = '—'; endTime = '—'; }
+                                        else if (isOffOnHoliday) { startTime = '—'; endTime = '—'; }
+                                        
+                                        const ptStartIdx = pt ? timeSlots.indexOf(pt.start) : -1;
+                                        const ptNumCells = pt ? Math.floor(pt.hours * 2) : 0;
+                                        
+                                        // Demo call range calculation - find matching time slot
+                                        let demoStartIdx = -1;
+                                        if (demo) {
+                                          // Normalize demo time to match TIME_SLOTS format (HH:00 or HH:30)
+                                          const [demoH, demoM] = demo.time.split(':').map(Number);
+                                          const normalizedTime = `${demoH.toString().padStart(2, '0')}:${demoM < 30 ? '00' : '30'}`;
+                                          demoStartIdx = timeSlots.indexOf(normalizedTime);
+                                        }
+                                        const demoNumCells = demo ? Math.ceil(demo.duration / 30) : 0;
+                                        
+                                        return (
+                                          <tr key={name} className={`${TEAM[name].color} ${isUnavailable || isOffOnHoliday ? 'opacity-60' : ''}`}>
+                                            <td className="px-2 py-1 font-medium">{name === 'Monika' ? 'Monča' : name}</td>
+                                            <td className={`px-1 py-1 text-center font-medium ${isUnavailable || isOffOnHoliday ? 'text-gray-400' : shift === 'A' ? 'text-orange-600' : shift === 'M' ? 'text-blue-600' : shift === 'M4' ? 'text-emerald-600' : 'text-gray-500'}`}>
+                                              {startTime}
+                                            </td>
+                                            <td className={`px-1 py-1 text-center font-medium ${isUnavailable || isOffOnHoliday ? 'text-gray-400' : shift === 'A' ? 'text-orange-600' : shift === 'M' ? 'text-blue-600' : shift === 'M4' ? 'text-emerald-600' : 'text-gray-500'}`}>
+                                              {endTime}
+                                            </td>
+                                            <td className="px-1 py-1 text-center">
+                                              {isHoliday && shift === 'M4' && (
+                                                <span className="bg-cyan-100 text-cyan-800 px-1 rounded">📞M</span>
+                                              )}
+                                              {!isHoliday && !isUnavailable && !hd && phone?.M === name && (
+                                                <span className="bg-cyan-100 text-cyan-800 px-1 rounded">📞M</span>
+                                              )}
+                                              {!isHoliday && !isUnavailable && !hd && phone?.A === name && (
+                                                <span className="bg-purple-100 text-purple-800 px-1 rounded">📞A</span>
+                                              )}
+                                              {isUnavailable && (
+                                                <span className={`${isOnVacation ? 'bg-yellow-200 text-yellow-800' : 'bg-orange-200 text-orange-800'} px-1 rounded text-xs`}>
+                                                  {isOnVacation ? 'V' : 'S'}
+                                                </span>
+                                              )}
+                                              {isOffOnHoliday && (
+                                                <span className="bg-emerald-100 text-emerald-800 px-1 rounded text-xs">Off</span>
+                                              )}
+                                            </td>
+                                            {timeSlots.map((t, idx) => {
+                                              const isInPtRange = pt && !hd && !isHoliday && idx >= ptStartIdx && idx < ptStartIdx + ptNumCells;
+                                              const isPtStart = pt && !hd && !isHoliday && idx === ptStartIdx;
+                                              const isAShiftEarlySlot = shift === 'A' && (t === '08:00' || t === '08:30');
+                                              const isMShiftLateSlot = shift === 'M' && (t === '17:00' || t === '17:30');
+                                              const isOutsideShift = isAShiftEarlySlot || isMShiftLateSlot;
+                                              
+                                              // Demo call range check
+                                              const isInDemoRange = demo && idx >= demoStartIdx && idx < demoStartIdx + demoNumCells;
+                                              const isDemoStart = demo && idx === demoStartIdx;
+                                              const isOffOnHoliday = isHoliday && shift !== 'M4';
+                                              
+                                              return (
+                                                <td key={t} className={`px-1 py-1 text-center ${isUnavailable ? (isOnVacation ? 'bg-yellow-100' : 'bg-orange-100') : isOffOnHoliday ? 'bg-emerald-50' : isOutsideShift ? 'bg-gray-200' : ''}`}>
+                                                  {isUnavailable ? (
+                                                    <span className="text-gray-400">—</span>
+                                                  ) : isOffOnHoliday ? (
+                                                    <span className="text-gray-400">—</span>
+                                                  ) : isOutsideShift ? (
+                                                    <span className="text-gray-400">—</span>
+                                                  ) : hd && hd.type === 'afternoon' && idx === 0 ? (
+                                                    <span className="bg-amber-100 text-amber-800 px-1 rounded">Half day off</span>
+                                                  ) : hd && hd.type === 'morning' && t === '12:00' ? (
+                                                    <span className="bg-amber-100 text-amber-800 px-1 rounded">Half day off</span>
+                                                  ) : isDemoStart ? (
+                                                    <span className="bg-indigo-100 text-indigo-800 px-1 rounded">📹 Demo {demo.duration}m</span>
+                                                  ) : isInDemoRange ? (
+                                                    <span className="bg-indigo-100 text-indigo-800 px-1 rounded">📹</span>
+                                                  ) : doc && t === doc.time ? (
+                                                    <span className="bg-red-100 text-red-800 px-1 rounded">Doctor</span>
+                                                  ) : isPtStart ? (
+                                                    <span className="bg-green-100 text-green-800 px-1 rounded">PT {pt.hours}h</span>
+                                                  ) : isInPtRange ? (
+                                                    <span className="bg-green-100 text-green-800 px-1 rounded">PT</span>
+                                                  ) : null}
+                                                </td>
+                                              );
+                                            })}
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Sidebar */}
+              <div className="lg:col-span-1 space-y-4">
+                {/* Time Off (Vacations, Sick Days & Half Days) */}
+                <div className="bg-white rounded-xl shadow-sm p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <Users className="w-4 h-4" /> Time Off
+                  </h3>
+                  <div className="space-y-2 mb-3">
+                    <select
+                      value={newTimeOff.person}
+                      onChange={(e) => setNewTimeOff(prev => ({ ...prev, person: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    >
+                      {TEAM_ORDER.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={newTimeOff.type}
+                      onChange={(e) => setNewTimeOff(prev => ({ ...prev, type: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    >
+                      <option value="full">🏖️ Vacation (Full Day)</option>
+                      <option value="sick">🤒 Sick Day</option>
+                      <option value="morning">Half Day - Works Morning (M4)</option>
+                      <option value="afternoon">Half Day - Works Afternoon (A4)</option>
+                    </select>
+                    <input
+                      type="date"
+                      value={newTimeOff.startDate}
+                      onChange={(e) => setNewTimeOff(prev => ({ ...prev, startDate: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                      placeholder="Start date"
+                    />
+                    {(newTimeOff.type === 'full' || newTimeOff.type === 'sick') && (
+                      <input
+                        type="date"
+                        value={newTimeOff.endDate}
+                        onChange={(e) => setNewTimeOff(prev => ({ ...prev, endDate: e.target.value }))}
+                        className="w-full px-3 py-2 border rounded-lg text-sm"
+                        placeholder="End date (optional)"
+                      />
+                    )}
+                    <button
+                      onClick={addTimeOff}
+                      className={`w-full flex items-center justify-center gap-1 px-3 py-2 text-white rounded-lg text-sm ${newTimeOff.type === 'sick' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-yellow-500 hover:bg-yellow-600'}`}
+                    >
+                      <Plus className="w-4 h-4" /> Add Time Off
+                    </button>
+                  </div>
+                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                    {/* Full day vacations */}
+                    {Object.entries(vacations).map(([person, dates]) =>
+                      dates.map(date => (
+                        <div key={`v-${person}-${date}`} className="flex items-center justify-between bg-yellow-50 px-2 py-1 rounded text-xs">
+                          <span>{person}: {date} <span className="text-yellow-700">(V)</span></span>
+                          <button onClick={() => removeVacation(person, date)} className="text-red-500 hover:text-red-700">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                    {/* Sick days */}
+                    {Object.entries(sickDays).map(([person, dates]) =>
+                      dates.map(date => (
+                        <div key={`s-${person}-${date}`} className="flex items-center justify-between bg-orange-50 px-2 py-1 rounded text-xs">
+                          <span>{person}: {date} <span className="text-orange-700">(S)</span></span>
+                          <button onClick={() => removeSickDay(person, date)} className="text-red-500 hover:text-red-700">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                    {/* Half days */}
+                    {Object.entries(halfDays).map(([person, days]) =>
+                      days.map(hd => (
+                        <div key={`h-${person}-${hd.date}`} className="flex items-center justify-between bg-amber-50 px-2 py-1 rounded text-xs">
+                          <span>{person}: {hd.date} <span className="text-amber-700">({hd.type === 'morning' ? 'M4' : 'A4'})</span></span>
+                          <button onClick={() => removeHalfDay(person, hd.date)} className="text-red-500 hover:text-red-700">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+                
+                {/* Doctor Appointments */}
+                <div className="bg-white rounded-xl shadow-sm p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <Stethoscope className="w-4 h-4" /> Doctor Appointments
+                  </h3>
+                  <div className="space-y-2 mb-3">
+                    <select
+                      value={newDoctor.person}
+                      onChange={(e) => setNewDoctor(prev => ({ ...prev, person: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    >
+                      {TEAM_ORDER.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="date"
+                      value={newDoctor.date}
+                      onChange={(e) => setNewDoctor(prev => ({ ...prev, date: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                    <input
+                      type="time"
+                      value={newDoctor.time}
+                      onChange={(e) => setNewDoctor(prev => ({ ...prev, time: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                    <button
+                      onClick={addDoctor}
+                      className="w-full flex items-center justify-center gap-1 px-3 py-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600"
+                    >
+                      <Plus className="w-4 h-4" /> Add Doctor
+                    </button>
+                  </div>
+                  <div className="space-y-1 max-h-28 overflow-y-auto">
+                    {doctorAppts.map((d, i) => (
+                      <div key={i} className="flex items-center justify-between bg-red-50 px-2 py-1 rounded text-xs">
+                        <span>{d.person}: {d.date} @ {d.time}</span>
+                        <button onClick={() => removeDoctor(i)} className="text-red-500 hover:text-red-700">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Demo Calls */}
+                <div className="bg-white rounded-xl shadow-sm p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <Video className="w-4 h-4" /> Demo Calls
+                  </h3>
+                  <div className="space-y-2 mb-3">
+                    <select
+                      value={newDemo.person}
+                      onChange={(e) => setNewDemo(prev => ({ ...prev, person: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    >
+                      {TEAM_ORDER.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="date"
+                      value={newDemo.date}
+                      onChange={(e) => setNewDemo(prev => ({ ...prev, date: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                    <input
+                      type="time"
+                      value={newDemo.time}
+                      onChange={(e) => setNewDemo(prev => ({ ...prev, time: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                    <select
+                      value={newDemo.duration}
+                      onChange={(e) => setNewDemo(prev => ({ ...prev, duration: parseInt(e.target.value) }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    >
+                      <option value={30}>30 min</option>
+                      <option value={60}>1 hour</option>
+                      <option value={90}>1.5 hours</option>
+                      <option value={120}>2 hours</option>
+                    </select>
+                    <button
+                      onClick={addDemo}
+                      className="w-full flex items-center justify-center gap-1 px-3 py-2 bg-indigo-500 text-white rounded-lg text-sm hover:bg-indigo-600"
+                    >
+                      <Plus className="w-4 h-4" /> Add Demo
+                    </button>
+                  </div>
+                  <div className="space-y-1 max-h-28 overflow-y-auto">
+                    {demoCalls.map((d, i) => (
+                      <div key={i} className="flex items-center justify-between bg-indigo-50 px-2 py-1 rounded text-xs">
+                        <span>{d.person}: {d.date} @ {d.time} ({d.duration}min)</span>
+                        <button onClick={() => removeDemo(i)} className="text-red-500 hover:text-red-700">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Shift Overrides (Last-minute changes & Comp time) */}
+                <div className="bg-white rounded-xl shadow-sm p-4">
+                  <h3 className="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                    🔄 Shift Overrides
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-3">Swap shifts or give comp time (M4/A4) for holiday work</p>
+                  <div className="space-y-2 mb-3">
+                    <select
+                      value={newOverride.person}
+                      onChange={(e) => setNewOverride(prev => ({ ...prev, person: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    >
+                      <option value="">Select person...</option>
+                      {TEAM_ORDER.map(name => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="date"
+                      value={newOverride.date}
+                      onChange={(e) => setNewOverride(prev => ({ ...prev, date: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                    <select
+                      value={newOverride.shift}
+                      onChange={(e) => setNewOverride(prev => ({ ...prev, shift: e.target.value }))}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    >
+                      <option value="M">M (Morning 8:00-16:30)</option>
+                      <option value="A">A (Afternoon 9:00-17:30)</option>
+                      <option value="M4">M4 (4h AM 8:00-12:00) - Comp time</option>
+                      <option value="A4">A4 (4h PM 12:30-16:30) - Comp time</option>
+                    </select>
+                    <button
+                      onClick={() => {
+                        if (newOverride.person && newOverride.date) {
+                          addShiftOverride(newOverride.date, newOverride.person, newOverride.shift);
+                          setNewOverride({ person: '', date: '', shift: 'M' });
+                        }
+                      }}
+                      className="w-full flex items-center justify-center gap-1 px-3 py-2 bg-purple-500 text-white rounded-lg text-sm hover:bg-purple-600"
+                    >
+                      <Plus className="w-4 h-4" /> Override Shift
+                    </button>
+                  </div>
+                  <div className="space-y-1 max-h-28 overflow-y-auto">
+                    {Object.entries(shiftOverrides).map(([date, overrides]) =>
+                      Object.entries(overrides).map(([person, shift]) => (
+                        <div key={`${date}-${person}`} className="flex items-center justify-between bg-purple-50 px-2 py-1 rounded text-xs">
+                          <span>{person}: {date} → <strong>{shift}</strong></span>
+                          <button onClick={() => removeShiftOverride(date, person)} className="text-red-500 hover:text-red-700">
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))
+                    )}
+                    {Object.keys(shiftOverrides).length === 0 && (
+                      <p className="text-gray-400 text-xs italic">No overrides</p>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Legend */}
+                <div className="bg-white rounded-xl shadow-sm p-4">
+                  <h3 className="font-semibold text-gray-900 mb-3">Legend</h3>
+                  <div className="grid grid-cols-2 gap-1 text-xs">
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded">M</span>
+                      <span>Morning</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-orange-100 text-orange-800 rounded">A</span>
+                      <span>Afternoon</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded">M4</span>
+                      <span>4h AM</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded">A4</span>
+                      <span>4h PM</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-yellow-200 text-yellow-800 rounded">V</span>
+                      <span>Vacation</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-orange-200 text-orange-800 rounded">S</span>
+                      <span>Sick</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-cyan-100 text-cyan-800 rounded">📞M</span>
+                      <span>Phone AM</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-purple-100 text-purple-800 rounded">📞A</span>
+                      <span>Phone PM</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-green-100 text-green-800 rounded">PT</span>
+                      <span>Project</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-red-100 text-red-800 rounded">Doc</span>
+                      <span>Doctor</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded">📹</span>
+                      <span>Demo</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-red-600 text-white rounded">X</span>
+                      <span>Closed</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<CCSchedulerApp />);
+  </script>
+</body>
+</html>
